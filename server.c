@@ -25,9 +25,8 @@ enum COMMAND_TYPE {
   INVALID_COMMAND = 5
 };
 
-int initializeSocket(const char* ipVersion, const char* port) {
+int initializeServerSocket(const char* ipVersion, const char* port, struct sockaddr** address) {
   int domain, addressSize, serverfd, sockfd, yes = 1;
-  struct sockaddr* address;
   struct sockaddr_in6 addressv6;
   struct sockaddr_in addressv4;
 
@@ -42,12 +41,12 @@ int initializeSocket(const char* ipVersion, const char* port) {
   if (strcmp(ipVersion, "v4") == 0) {
     domain = AF_INET;
     addressSize = sizeof(addressv4);
-    address = (struct sockaddr*)&addressv4;
+    *address = (struct sockaddr*)&addressv4;
 
   } else if (strcmp(ipVersion, "v6") == 0) {
     domain = AF_INET6;
     addressSize = sizeof(addressv6);
-    address = (struct sockaddr*)&addressv6;
+    *address = (struct sockaddr*)&addressv6;
   }
 
   if ((serverfd = socket(domain, SOCK_STREAM, IPPROTO_TCP)) == 0) {
@@ -60,7 +59,7 @@ int initializeSocket(const char* ipVersion, const char* port) {
     exit(EXIT_FAILURE);
   }
 
-  if (bind(serverfd, address, addressSize) < 0) {
+  if (bind(serverfd, *address, addressSize) < 0) {
     perror("Could not bind port to socket");
     exit(EXIT_FAILURE);
   }
@@ -70,9 +69,15 @@ int initializeSocket(const char* ipVersion, const char* port) {
     exit(EXIT_FAILURE);
   }
 
+  return serverfd;
+}
+
+int acceptNewConnection(int serverfd, struct sockaddr* address) {
+  int sockfd;
   int addrSize = sizeof(address);
+
   if ((sockfd = accept(serverfd, (struct sockaddr*)&address, (socklen_t*)&addrSize)) < 0) {
-    perror("Could not accept connections in this server");
+    perror("Could not accept new connections in this server");
     exit(EXIT_FAILURE);
   }
 
@@ -334,8 +339,11 @@ int main(int argc, char const* argv[]) {
       {-1, -1, -1, -1}};
   int remainingSensors = 15;
 
+  struct sockaddr* address;
+  int serverfd = initializeServerSocket(argv[1], argv[2], &address);
+
   while (1) {
-    int sockfd = initializeSocket(argv[1], argv[2]);
+    int sockfd = acceptNewConnection(serverfd, address);
 
     while (1) {
       char buffer[MAX_MESSAGE_SIZE] = {0};
