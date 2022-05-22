@@ -14,6 +14,7 @@
 
 #define MAX_CONNECTIONS 2
 #define MAX_MESSAGE_SIZE 500
+#define INVALID_SENSOR_ID -2
 
 enum COMMAND_TYPE {
   ADD = 0,
@@ -80,13 +81,17 @@ int initializeSocket(const char* ipVersion, const char* port) {
 typedef struct {
   int commandType;
   int equipmentId;
-  int sensorsIds[15];
+  int sensorsIds[3];
 } Command;
 
 void getSensorsIds(char** commandToken, Command* command) {
   *commandToken = strtok(NULL, " ");
   for (int i = 0; strcmp(*commandToken, "in") != 0; i++) {
-    command->sensorsIds[i] = atoi(*commandToken) - 1;
+    if (atoi(*commandToken) < 1 || atoi(*commandToken) > 4) {
+      command->sensorsIds[i] = INVALID_SENSOR_ID;
+    } else {
+      command->sensorsIds[i] = atoi(*commandToken) - 1;
+    }
     *commandToken = strtok(NULL, " ");
   }
 }
@@ -95,7 +100,7 @@ Command interpretCommand(char* buffer) {
   char* commandToken = strtok(buffer, " ");
   Command command;
 
-  for (int i = 0; i < 15; i++) {
+  for (int i = 0; i < 3; i++) {
     command.sensorsIds[i] = -1;
   }
 
@@ -276,8 +281,17 @@ void readSensors(Command command, float equipments[4][4], char* commandOutput) {
 
 int executeCommand(Command command, float equipments[4][4], int* remainingSensors, int sockfd, char* commandOutput) {
   if (command.commandType != KILL && (command.equipmentId < 0 || command.equipmentId > 3)) {
-    commandOutput = "invalid equipment";
+    sprintf(commandOutput, "invalid equipment");
     return 0;
+  }
+
+  if (command.commandType != KILL) {
+    for (int i = 0; i < 3; i++) {
+      if (command.sensorsIds[i] == INVALID_SENSOR_ID) {
+        sprintf(commandOutput, "invalid sensor");
+        return 0;
+      }
+    }
   }
 
   switch (command.commandType) {
