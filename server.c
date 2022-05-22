@@ -13,42 +13,47 @@
 #include <unistd.h>
 
 #define MAX_CONNECTIONS 2
-#define PORT 3000
+#define MAX_MESSAGE_SIZE 500
 
-enum COMMAND_TYPE { ADD = 0, REMOVE = 1, LIST = 2, READ = 3 };
+enum COMMAND_TYPE {
+  ADD = 0,
+  REMOVE = 1,
+  LIST = 2,
+  READ = 3,
+  KILL = 4
+};
 
-int initializeSocket(const char *ipVersion) {
-  int domain, addressSize, serverfd, new_fd, yes = 1;
-  struct sockaddr *address;
+int initializeSocket(const char* ipVersion, const char* port) {
+  int domain, addressSize, serverfd, sockfd, yes = 1;
+  struct sockaddr* address;
   struct sockaddr_in6 addressv6;
   struct sockaddr_in addressv4;
 
-  addressv6.sin6_family = AF_INET6;
-  addressv6.sin6_port = htons(PORT);
-  addressv6.sin6_addr = in6addr_any;
-
   addressv4.sin_family = AF_INET;
-  addressv4.sin_port = htons(PORT);
+  addressv4.sin_port = htons(atoi(port));
   addressv4.sin_addr.s_addr = htonl(INADDR_ANY);
+
+  addressv6.sin6_family = AF_INET6;
+  addressv6.sin6_port = htons(atoi(port));
+  addressv6.sin6_addr = in6addr_any;
 
   if (strcmp(ipVersion, "v4") == 0) {
     domain = AF_INET;
     addressSize = sizeof(addressv4);
-    address = (struct sockaddr *)&addressv4;
+    address = (struct sockaddr*)&addressv4;
 
   } else if (strcmp(ipVersion, "v6") == 0) {
     domain = AF_INET6;
     addressSize = sizeof(addressv6);
-    address = (struct sockaddr *)&addressv6;
+    address = (struct sockaddr*)&addressv6;
   }
 
-  if ((serverfd = socket(domain, SOCK_STREAM, 0)) == 0) {
+  if ((serverfd = socket(domain, SOCK_STREAM, IPPROTO_TCP)) == 0) {
     perror("Could not create socket");
     exit(EXIT_FAILURE);
   }
 
-  if (setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes,
-                 sizeof(yes)) == -1) {
+  if (setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes, sizeof(yes)) == -1) {
     perror("Could not set socket option");
     exit(EXIT_FAILURE);
   }
@@ -64,12 +69,12 @@ int initializeSocket(const char *ipVersion) {
   }
 
   int addrSize = sizeof(address);
-  if ((new_fd = accept(serverfd, (struct sockaddr *)&address,
-                       (socklen_t *)&addrSize)) < 0) {
+  if ((sockfd = accept(serverfd, (struct sockaddr*)&address, (socklen_t*)&addrSize)) < 0) {
     perror("Could not accept connections in this server");
     exit(EXIT_FAILURE);
   }
-  return new_fd;
+
+  return sockfd;
 }
 
 typedef struct {
@@ -78,7 +83,7 @@ typedef struct {
   int sensorsIds[15];
 } Command;
 
-void getSensorsIds(char **commandToken, Command *command) {
+void getSensorsIds(char** commandToken, Command* command) {
   *commandToken = strtok(NULL, " ");
   for (int i = 0; strcmp(*commandToken, "in") != 0; i++) {
     command->sensorsIds[i] = atoi(*commandToken) - 1;
@@ -86,33 +91,29 @@ void getSensorsIds(char **commandToken, Command *command) {
   }
 }
 
-Command interpretCommand(char *buffer) {
-  char *commandToken = strtok(buffer, " ");
+Command interpretCommand(char* buffer) {
+  char* commandToken = strtok(buffer, " ");
   Command command;
 
   for (int i = 0; i < 15; i++) {
     command.sensorsIds[i] = -1;
   }
 
-  if (strcmp(commandToken, "add") == 0 &&
-      strcmp(commandToken = strtok(NULL, " "), "sensor") == 0) {
+  if (strcmp(commandToken, "add") == 0 && strcmp(commandToken = strtok(NULL, " "), "sensor") == 0) {
     command.commandType = ADD;
     getSensorsIds(&commandToken, &command);
     commandToken = strtok(NULL, " ");
     command.equipmentId = atoi(commandToken) - 1;
   }
 
-  else if (strcmp(commandToken, "remove") == 0 &&
-           strcmp(commandToken = strtok(NULL, " "), "sensor") == 0) {
+  else if (strcmp(commandToken, "remove") == 0 && strcmp(commandToken = strtok(NULL, " "), "sensor") == 0) {
     command.commandType = REMOVE;
     getSensorsIds(&commandToken, &command);
     commandToken = strtok(NULL, " ");
     command.equipmentId = atoi(commandToken) - 1;
   }
 
-  else if (strcmp(commandToken, "list") == 0 &&
-           strcmp(commandToken = strtok(NULL, " "), "sensors") == 0 &&
-           strcmp(commandToken = strtok(NULL, " "), "in") == 0) {
+  else if (strcmp(commandToken, "list") == 0 && strcmp(commandToken = strtok(NULL, " "), "sensors") == 0 && strcmp(commandToken = strtok(NULL, " "), "in") == 0) {
     command.commandType = LIST;
     commandToken = strtok(NULL, " ");
     command.equipmentId = atoi(commandToken) - 1;
@@ -126,13 +127,13 @@ Command interpretCommand(char *buffer) {
   }
 
   else {
-    command.commandType = -1;
+    command.commandType = KILL;
   }
+
   return command;
 }
 
-char *addSensors(Command command, float equipments[4][4],
-                 int *remainingSensors) {
+void addSensors(Command command, float equipments[4][4], int* remainingSensors, char* commandOutput) {
   int addedSensors[3] = {-1, -1, -1};
   int existentSensors[3] = {-1, -1, -1};
   int addedSensorsIndex = 0, existentSensorsIndex = 0;
@@ -142,7 +143,8 @@ char *addSensors(Command command, float equipments[4][4],
        addedSensorsCount++) {
   }
   if (addedSensorsCount > *remainingSensors) {
-    return "limit exceeded";
+    commandOutput = "limit exceeded";
+    return;
   }
   for (int i = 0; command.sensorsIds[i] != -1; i++) {
     if (equipments[command.equipmentId][command.sensorsIds[i]] != -1) {
@@ -157,13 +159,11 @@ char *addSensors(Command command, float equipments[4][4],
     }
   }
 
-  char *commandOutput = malloc(256 * sizeof(char));
   int bufferIndex = 0;
   if (addedSensors[0] != -1) {
     bufferIndex += sprintf(&commandOutput[bufferIndex], "sensor");
     for (int i = 0; addedSensors[i] != -1 && i < 3; i++) {
-      bufferIndex +=
-          sprintf(&commandOutput[bufferIndex], " %02d", addedSensors[i] + 1);
+      bufferIndex += sprintf(&commandOutput[bufferIndex], " %02d", addedSensors[i] + 1);
     }
     bufferIndex += sprintf(&commandOutput[bufferIndex], " added");
   }
@@ -172,20 +172,15 @@ char *addSensors(Command command, float equipments[4][4],
     if (addedSensors[0] != -1) {
       bufferIndex += sprintf(&commandOutput[bufferIndex], " ");
     }
-    bufferIndex +=
-        sprintf(&commandOutput[bufferIndex], "%02d", existentSensors[0] + 1);
+    bufferIndex += sprintf(&commandOutput[bufferIndex], "%02d", existentSensors[0] + 1);
     for (int i = 1; existentSensors[i] != -1 && i < 3; i++) {
-      bufferIndex +=
-          sprintf(&commandOutput[bufferIndex], " %02d", existentSensors[i] + 1);
+      bufferIndex += sprintf(&commandOutput[bufferIndex], " %02d", existentSensors[i] + 1);
     }
-    bufferIndex += sprintf(&commandOutput[bufferIndex],
-                           " already exists in %02d", command.equipmentId + 1);
+    bufferIndex += sprintf(&commandOutput[bufferIndex], " already exists in %02d", command.equipmentId + 1);
   }
-  return commandOutput;
 }
 
-char *removeSensors(Command command, float equipments[4][4],
-                    int *remainingSensors) {
+void removeSensors(Command command, float equipments[4][4], int* remainingSensors, char* commandOutput) {
   int removedSensors[3] = {-1, -1, -1};
   int nonExistentSensors[3] = {-1, -1, -1};
   int removedSensorsIndex = 0, nonExistentSensorsIndex = 0;
@@ -202,13 +197,11 @@ char *removeSensors(Command command, float equipments[4][4],
     }
   }
 
-  char *commandOutput = malloc(256 * sizeof(char));
   int bufferIndex = 0;
   if (removedSensors[0] != -1) {
     bufferIndex += sprintf(&commandOutput[bufferIndex], "sensor");
     for (int i = 0; removedSensors[i] != -1 && i < 3; i++) {
-      bufferIndex +=
-          sprintf(&commandOutput[bufferIndex], " %02d", removedSensors[i] + 1);
+      bufferIndex += sprintf(&commandOutput[bufferIndex], " %02d", removedSensors[i] + 1);
     }
     bufferIndex += sprintf(&commandOutput[bufferIndex], " removed");
   }
@@ -217,22 +210,17 @@ char *removeSensors(Command command, float equipments[4][4],
     if (removedSensors[0] != -1) {
       bufferIndex += sprintf(&commandOutput[bufferIndex], " ");
     }
-    bufferIndex +=
-        sprintf(&commandOutput[bufferIndex], "%02d", nonExistentSensors[0] + 1);
+    bufferIndex += sprintf(&commandOutput[bufferIndex], "%02d", nonExistentSensors[0] + 1);
 
     for (int i = 1; nonExistentSensors[i] != -1 && i < 3; i++) {
-      bufferIndex += sprintf(&commandOutput[bufferIndex], " %02d",
-                             nonExistentSensors[i] + 1);
+      bufferIndex += sprintf(&commandOutput[bufferIndex], " %02d", nonExistentSensors[i] + 1);
     }
-    bufferIndex += sprintf(&commandOutput[bufferIndex],
-                           " does not exist in %02d", command.equipmentId + 1);
+    bufferIndex += sprintf(&commandOutput[bufferIndex], " does not exist in %02d", command.equipmentId + 1);
   }
-  return commandOutput;
 }
 
-char *listSensors(Command command, float equipments[4][4]) {
+void listSensors(Command command, float equipments[4][4], char* commandOutput) {
   int equipmentId = command.equipmentId;
-  char *commandOutput = malloc(256 * sizeof(char));
   int bufferIndex = 0;
 
   if (equipments[equipmentId][0] != -1) {
@@ -246,13 +234,11 @@ char *listSensors(Command command, float equipments[4][4]) {
   }
 
   if (strlen(commandOutput) == 0) {
-    return "none";
+    sprintf(commandOutput, "none");
   }
-
-  return commandOutput;
 }
 
-char *readSensors(Command command, float equipments[4][4]) {
+void readSensors(Command command, float equipments[4][4], char* commandOutput) {
   int availableSensors[4] = {-1, -1, -1, -1};
   int nonExistentSensors[4] = {-1, -1, -1, -1};
   int availableSensorsIndex = 0, nonExistentSensorsIndex = 0;
@@ -267,16 +253,11 @@ char *readSensors(Command command, float equipments[4][4]) {
     }
   }
 
-  char *commandOutput = malloc(256 * sizeof(char));
   int bufferIndex = 0;
   if (availableSensors[0] != -1) {
-    bufferIndex +=
-        sprintf(&commandOutput[bufferIndex], "%.2f",
-                equipments[command.equipmentId][availableSensors[0]]);
+    bufferIndex += sprintf(&commandOutput[bufferIndex], "%.2f", equipments[command.equipmentId][availableSensors[0]]);
     for (int i = 1; availableSensors[i] != -1 && i < 4; i++) {
-      bufferIndex +=
-          sprintf(&commandOutput[bufferIndex], " %.2f",
-                  equipments[command.equipmentId][availableSensors[i]]);
+      bufferIndex += sprintf(&commandOutput[bufferIndex], " %.2f", equipments[command.equipmentId][availableSensors[i]]);
     }
   }
 
@@ -284,60 +265,76 @@ char *readSensors(Command command, float equipments[4][4]) {
     if (availableSensors[0] != -1) {
       bufferIndex += sprintf(&commandOutput[bufferIndex], " and ");
     }
-    bufferIndex +=
-        sprintf(&commandOutput[bufferIndex], "%02d", nonExistentSensors[0] + 1);
+    bufferIndex += sprintf(&commandOutput[bufferIndex], "%02d", nonExistentSensors[0] + 1);
+
     for (int i = 1; nonExistentSensors[i] != -1 && i < 4; i++) {
-      bufferIndex += sprintf(&commandOutput[bufferIndex], " %02d",
-                             nonExistentSensors[i] + 1);
+      bufferIndex += sprintf(&commandOutput[bufferIndex], " %02d", nonExistentSensors[i] + 1);
     }
     bufferIndex += sprintf(&commandOutput[bufferIndex], " not installed");
   }
-
-  return commandOutput;
 }
 
-char *executeCommand(Command command, float equipments[4][4],
-                     int *remainingSensors) {
-
-  if (command.equipmentId < 0 || command.equipmentId > 3) {
-    char *invalidEquipment = "invalid equipment";
-    return invalidEquipment;
+int executeCommand(Command command, float equipments[4][4], int* remainingSensors, int sockfd, char* commandOutput) {
+  if (command.commandType != KILL && (command.equipmentId < 0 || command.equipmentId > 3)) {
+    commandOutput = "invalid equipment";
+    return 0;
   }
+
   switch (command.commandType) {
     case ADD:
-      return addSensors(command, equipments, remainingSensors);
+      addSensors(command, equipments, remainingSensors, commandOutput);
+      break;
     case REMOVE:
-      return removeSensors(command, equipments, remainingSensors);
+      removeSensors(command, equipments, remainingSensors, commandOutput);
+      break;
     case LIST:
-      return listSensors(command, equipments);
+      listSensors(command, equipments, commandOutput);
+      break;
     case READ:
-      return readSensors(command, equipments);
+      readSensors(command, equipments, commandOutput);
+      break;
+    case KILL:
+      close(sockfd);
+      return -1;
     default:
       break;
   }
+
+  return 0;
 }
 
-int main(int argc, char const *argv[]) {
+int main(int argc, char const* argv[]) {
   srand(time(NULL));
-  int valread;
-
-  char buffer[1024] = {0};
   float equipments[4][4] = {
-      {-1, -1, -1, -1}, {-1, -1, -1, -1}, {-1, -1, -1, -1}, {-1, -1, -1, -1}};
+      {-1, -1, -1, -1},
+      {-1, -1, -1, -1},
+      {-1, -1, -1, -1},
+      {-1, -1, -1, -1}};
   int remainingSensors = 15;
 
   while (1) {
-    int new_fd = initializeSocket(argv[1]);
+    int sockfd = initializeSocket(argv[1], argv[2]);
+
     while (1) {
-      valread = read(new_fd, buffer, 1024);
-      Command command = interpretCommand(buffer);
-      if (command.commandType == -1) {
-        close(new_fd);
+      char buffer[MAX_MESSAGE_SIZE] = {0};
+      int bytesRead = read(sockfd, buffer, MAX_MESSAGE_SIZE - 1);
+
+      if (bytesRead < 1) {
+        close(sockfd);
         break;
       }
-      char *commandOutput =
-          executeCommand(command, equipments, &remainingSensors);
-      send(new_fd, commandOutput, strlen(commandOutput), 0);
+
+      printf("%s\n", buffer);
+
+      Command command = interpretCommand(buffer);
+      char* commandOutput = malloc(sizeof(char) * 256);
+
+      if (executeCommand(command, equipments, &remainingSensors, sockfd, commandOutput) == -1) {
+        break;
+      }
+
+      sprintf(&commandOutput[strlen(commandOutput)], "\n");
+      send(sockfd, commandOutput, strlen(commandOutput), 0);
     }
   }
 
