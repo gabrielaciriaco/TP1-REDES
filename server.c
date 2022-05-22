@@ -21,7 +21,8 @@ enum COMMAND_TYPE {
   REMOVE = 1,
   LIST = 2,
   READ = 3,
-  KILL = 4
+  KILL = 4,
+  INVALID_COMMAND = 5
 };
 
 int initializeSocket(const char* ipVersion, const char* port) {
@@ -131,8 +132,12 @@ Command interpretCommand(char* buffer) {
     command.equipmentId = atoi(commandToken) - 1;
   }
 
-  else {
+  else if (strcmp(commandToken, "kill") == 0) {
     command.commandType = KILL;
+  }
+
+  else {
+    command.commandType = INVALID_COMMAND;
   }
 
   return command;
@@ -280,12 +285,12 @@ void readSensors(Command command, float equipments[4][4], char* commandOutput) {
 }
 
 int executeCommand(Command command, float equipments[4][4], int* remainingSensors, int sockfd, char* commandOutput) {
-  if (command.commandType != KILL && (command.equipmentId < 0 || command.equipmentId > 3)) {
-    sprintf(commandOutput, "invalid equipment");
-    return 0;
-  }
+  if (command.commandType != KILL && command.commandType != INVALID_COMMAND) {
+    if (command.equipmentId < 0 || command.equipmentId > 3) {
+      sprintf(commandOutput, "invalid equipment");
+      return 0;
+    }
 
-  if (command.commandType != KILL) {
     for (int i = 0; i < 3; i++) {
       if (command.sensorsIds[i] == INVALID_SENSOR_ID) {
         sprintf(commandOutput, "invalid sensor");
@@ -308,6 +313,9 @@ int executeCommand(Command command, float equipments[4][4], int* remainingSensor
       readSensors(command, equipments, commandOutput);
       break;
     case KILL:
+      close(sockfd);
+      exit(EXIT_FAILURE);
+    case INVALID_COMMAND:
       close(sockfd);
       return -1;
     default:
@@ -347,7 +355,10 @@ int main(int argc, char const* argv[]) {
         break;
       }
 
-      sprintf(&commandOutput[strlen(commandOutput)], "\n");
+      if (strlen(commandOutput) > 0) {
+        sprintf(&commandOutput[strlen(commandOutput)], "\n");
+      }
+
       send(sockfd, commandOutput, strlen(commandOutput), 0);
     }
   }
