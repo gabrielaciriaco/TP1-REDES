@@ -153,15 +153,14 @@ void addSensors(Command command, float equipments[4][4], int* remainingSensors, 
   int existentSensors[3] = {-1, -1, -1};
   int addedSensorsIndex = 0, existentSensorsIndex = 0;
 
-  int addedSensorsCount;
-  for (addedSensorsCount = 0; command.sensorsIds[addedSensorsCount] != -1;
-       addedSensorsCount++) {
+  int addedSensorsCount = 0;
+  for (addedSensorsCount = 0; addedSensorsCount < 3 && command.sensorsIds[addedSensorsCount] != -1; addedSensorsCount++) {
   }
   if (addedSensorsCount > *remainingSensors) {
     commandOutput = "limit exceeded";
     return;
   }
-  for (int i = 0; command.sensorsIds[i] != -1; i++) {
+  for (int i = 0; i < 3 && command.sensorsIds[i] != -1; i++) {
     if (equipments[command.equipmentId][command.sensorsIds[i]] != -1) {
       existentSensors[existentSensorsIndex] = command.sensorsIds[i];
       existentSensorsIndex++;
@@ -200,7 +199,7 @@ void removeSensors(Command command, float equipments[4][4], int* remainingSensor
   int nonExistentSensors[3] = {-1, -1, -1};
   int removedSensorsIndex = 0, nonExistentSensorsIndex = 0;
 
-  for (int i = 0; command.sensorsIds[i] != -1; i++) {
+  for (int i = 0; i < 3 && command.sensorsIds[i] != -1; i++) {
     if (equipments[command.equipmentId][command.sensorsIds[i]] == -1) {
       nonExistentSensors[nonExistentSensorsIndex] = command.sensorsIds[i];
       nonExistentSensorsIndex++;
@@ -258,7 +257,7 @@ void readSensors(Command command, float equipments[4][4], char* commandOutput) {
   int nonExistentSensors[4] = {-1, -1, -1, -1};
   int availableSensorsIndex = 0, nonExistentSensorsIndex = 0;
 
-  for (int i = 0; command.sensorsIds[i] != -1; i++) {
+  for (int i = 0; i < 3 && command.sensorsIds[i] != -1; i++) {
     if (equipments[command.equipmentId][i] == -1) {
       nonExistentSensors[nonExistentSensorsIndex] = command.sensorsIds[i];
       nonExistentSensorsIndex++;

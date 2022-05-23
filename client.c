@@ -57,11 +57,18 @@ int main(int argc, char *argv[]) {
 
     fflush(stdin);
     scanf("%[^\n]%*c", buffer);
+
+    int isKill = strcmp(buffer, "kill") == 0;
+    
     int bytesSent = send(sockfd, buffer, strlen(buffer), 0);
 
     if (bytesSent == 0) {
       perror("Could not communicate to server\n");
       exit(EXIT_FAILURE);
+    }
+
+    if(isKill) {
+      exit(EXIT_SUCCESS);
     }
 
     memset(buffer, 0, sizeof(buffer));
